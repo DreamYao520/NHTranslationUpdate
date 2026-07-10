@@ -1,0 +1,87 @@
+name: Publish translation update site
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Translation release name, for example 2.8.4-cn.2
+        required: false
+      pack_version:
+        description: Compatible GTNH version, for example 2.8.4
+        required: false
+      source_repository:
+        description: Translation source repository
+        required: true
+        default: DreamYao520/Translation-of-GTNH
+      source_ref:
+        description: Translation source branch, tag, or commit
+        required: true
+        default: master
+  schedule:
+    # 每天在 Translation-of-GTNH 的夜间构建之后刷新。
+    - cron: '30 19 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout updater
+        uses: actions/checkout@v5
+      - name: Checkout translation source
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.source_repository || 'DreamYao520/Translation-of-GTNH' }}
+          ref: ${{ inputs.source_ref || 'master' }}
+          path: translation-source
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Resolve release metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA=$(git -C translation-source rev-parse --short=12 HEAD)
+          PACK_VERSION='${{ inputs.pack_version }}'
+          if [[ -z "$PACK_VERSION" ]]; then
+            PACK_VERSION=$(sed -nE 's/.*([0-9]+\.[0-9]+\.[0-9]+) 版本汉化.*/\1/p' translation-source/README.md | head -n 1)
+          fi
+          if [[ -z "$PACK_VERSION" ]]; then
+            echo 'Could not determine GTNH version; use the pack_version input.' >&2
+            exit 1
+          fi
+          RELEASE='${{ inputs.release }}'
+          if [[ -z "$RELEASE" ]]; then
+            RELEASE="${PACK_VERSION}-nightly-${SOURCE_SHA}"
+          fi
+          echo "pack_version=$PACK_VERSION" >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+      - name: Build signed-by-hash update payloads
+        run: >-
+          python tools/build_update.py
+          --source translation-source
+          --output site
+          --release "${{ steps.metadata.outputs.release }}"
+          --pack-version "${{ steps.metadata.outputs.pack_version }}"
+          --base-url "${{ steps.pages.outputs.base_url }}"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
