@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Build deterministic GTNH translation payloads and a schema-v1 manifest."""
+"""Build a unified GTNH translation ZIP and a schema-v2 manifest.
+
+The single translation ZIP contains:
+  - assets/{domain}/{path}  — standard Minecraft resources (lang files etc.)
+  - txloader/{domain}/{path} — TX Loader resources
+"""
 
 from __future__ import annotations
 
@@ -14,12 +19,6 @@ import urllib.parse
 import zipfile
 from pathlib import Path, PurePosixPath
 
-DEFAULT_OVERLAY_ROOTS = (
-    "config/txloader",
-    "config/Betterloadingscreen",
-    "config/amazingtrophies",
-    "config/InGameInfoXML",
-)
 DOMAIN_PATTERN = re.compile(r"\[([^\[\]/]+)]$")
 
 
@@ -52,6 +51,7 @@ def add_entry(entries: dict[str, bytes], name: str, data: bytes, source_label: s
 
 
 def collect_resource_pack(source: Path) -> dict[str, bytes]:
+    """Collect standard Minecraft resources: resources/[domain]/... -> assets/{domain}/..."""
     entries: dict[str, bytes] = {}
     resources = source / "resources"
     if resources.is_dir():
@@ -64,19 +64,21 @@ def collect_resource_pack(source: Path) -> dict[str, bytes]:
             for file in sorted(path for path in container.rglob("*") if path.is_file()):
                 relative = file.relative_to(container).as_posix()
                 add_entry(entries, f"assets/{domain}/{relative}", file.read_bytes(), container.name)
-    metadata = {"pack": {"pack_format": 1, "description": "GTNH 简体中文社区自动更新汉化"}}
-    entries["pack.mcmeta"] = (json.dumps(metadata, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     return entries
 
 
-def collect_overlay(source: Path, roots: tuple[str, ...]) -> dict[str, bytes]:
+def collect_txloader(source: Path) -> dict[str, bytes]:
+    """Collect TX Loader resources from config/txloader/ -> txloader/{domain}/..."""
     entries: dict[str, bytes] = {}
-    for root in roots:
-        directory = source / Path(root)
-        if not directory.is_dir():
+    for sub in ("load", "forceload"):
+        base = source / "config" / "txloader" / sub
+        if not base.is_dir():
             continue
-        for file in sorted(path for path in directory.rglob("*") if path.is_file()):
-            add_entry(entries, file.relative_to(source).as_posix(), file.read_bytes())
+        for domain_dir in sorted(path for path in base.iterdir() if path.is_dir()):
+            domain = domain_dir.name
+            for file in sorted(path for path in domain_dir.rglob("*") if path.is_file()):
+                relative = file.relative_to(domain_dir).as_posix()
+                add_entry(entries, f"txloader/{domain}/{relative}", file.read_bytes(), f"txloader/{sub}/{domain}")
     return entries
 
 
@@ -111,35 +113,37 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     release_dir = output / "releases" / args.release
     release_dir.mkdir(parents=True)
 
-    artifacts: list[dict[str, object]] = []
+    entries: dict[str, bytes] = {}
+
     resource_entries = collect_resource_pack(source)
-    if len(resource_entries) > 1:
-        resource_archive = release_dir / "gtnh-zh-cn-resource-pack.zip"
-        write_zip(resource_archive, resource_entries)
-        artifacts.append(artifact(resource_archive, "gtnh-zh-cn-resource-pack", "resource_pack", args.base_url, args.release))
+    for k, v in resource_entries.items():
+        add_entry(entries, k, v)
 
-    overlay_entries = collect_overlay(source, tuple(args.overlay_root))
-    if overlay_entries:
-        overlay_archive = release_dir / "gtnh-zh-cn-overlay.zip"
-        write_zip(overlay_archive, overlay_entries)
-        artifacts.append(artifact(overlay_archive, "gtnh-zh-cn-overlay", "overlay", args.base_url, args.release))
+    txloader_entries = collect_txloader(source)
+    for k, v in txloader_entries.items():
+        add_entry(entries, k, v)
 
-    if not artifacts:
+    if not entries:
         raise ValueError("translation source produced no payloads")
+
+    translation_archive = release_dir / "gtnh-zh-cn-translation.zip"
+    write_zip(translation_archive, entries)
+
     manifest: dict[str, object] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "release": args.release,
         "minecraftVersion": "1.7.10",
         "packVersions": args.pack_version,
-        "artifacts": artifacts,
+        "artifacts": [
+            artifact(translation_archive, "gtnh-zh-cn-translation", "translation", args.base_url, args.release)
+        ],
     }
     output.mkdir(parents=True, exist_ok=True)
     (output / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    links = "".join(
-        f'<li><a href="{html.escape(item["url"])}">{html.escape(str(item["id"]))}</a></li>' for item in artifacts
-    )
+    artifact_info = manifest["artifacts"][0]  # type: ignore[index]
+    links = f'<li><a href="{html.escape(str(artifact_info["url"]))}">{html.escape(str(artifact_info["id"]))}</a></li>'
     (output / "index.html").write_text(
         "<!doctype html><meta charset=utf-8><title>NHTranslationUpdate</title>"
         f"<h1>GTNH 中文汉化更新</h1><p>当前版本：{html.escape(args.release)}</p><ul>{links}</ul>",
@@ -155,7 +159,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--release", required=True)
     parser.add_argument("--pack-version", action="append", required=True)
     parser.add_argument("--base-url", required=True)
-    parser.add_argument("--overlay-root", action="append", default=list(DEFAULT_OVERLAY_ROOTS))
     return parser.parse_args(argv)
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 class BuildUpdateTest(unittest.TestCase):
-    def test_builds_resource_and_overlay_payloads(self):
+    def test_builds_unified_translation_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
@@ -38,16 +38,25 @@ class BuildUpdateTest(unittest.TestCase):
                 text=True,
             )
             manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual(1, manifest["schemaVersion"])
+            self.assertEqual(2, manifest["schemaVersion"])
             self.assertEqual(["2.8.4"], manifest["packVersions"])
-            self.assertEqual(2, len(manifest["artifacts"]))
-            resource_zip = output / "releases" / "2.8.4-cn.1" / "gtnh-zh-cn-resource-pack.zip"
-            with zipfile.ZipFile(resource_zip) as archive:
-                self.assertIn("pack.mcmeta", archive.namelist())
-                self.assertIn("assets/example/lang/zh_CN.lang", archive.namelist())
+            self.assertEqual(1, len(manifest["artifacts"]))
+            self.assertEqual("translation", manifest["artifacts"][0]["kind"])
+
+            translation_zip = output / "releases" / "2.8.4-cn.1" / "gtnh-zh-cn-translation.zip"
+            with zipfile.ZipFile(translation_zip) as archive:
+                names = archive.namelist()
+                # Standard resource pack entries
+                self.assertIn("assets/example/lang/zh_CN.lang", names)
                 merged = archive.read("assets/example/lang/zh_CN.lang").decode("utf-8")
                 self.assertIn("example.key=示例", merged)
                 self.assertIn("addon.key=扩展", merged)
+                # TX Loader entries
+                self.assertIn("txloader/betterquesting/lang/zh_CN.lang", names)
+                self.assertEqual(
+                    "quest.key=任务\n",
+                    archive.read("txloader/betterquesting/lang/zh_CN.lang").decode("utf-8"),
+                )
 
 
 if __name__ == "__main__":

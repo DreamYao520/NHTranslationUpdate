@@ -2,18 +2,16 @@
 
 面向 **GT New Horizons / Minecraft 1.7.10** 的简体中文汉化自动更新模组。
 
-模组在 Forge 加载游戏资源前读取远程清单，下载经过 SHA-256 与大小校验的资源，原子安装到整合包，并在网络不可用或更新失败时继续使用上一版汉化。构建基于 GTNH 的 [ExampleMod1.7.10](https://github.com/GTNewHorizons/ExampleMod1.7.10)，更新思想参考 [CFPAOrg/I18nUpdateMod3](https://github.com/CFPAOrg/I18nUpdateMod3)，但下载协议和安装器是针对 GTNH 重新实现的。
+模组通过 ASM 字节码变换在游戏资源加载链中插入一个自定义 `IResourcePack`，从远程清单下载统一的翻译 ZIP，在内存中提供所有汉化资源（标准 Minecraft 语言文件 + TX Loader 资源），并在 TX Loader 的 `forceload` 包之后注入以确保持最高优先级。网络不可用或更新失败时继续使用上一版汉化。
 
 ## 能做什么
 
-- 把普通模组语言文件转换成 Minecraft 1.7.10 `pack_format: 1` 资源包。
-- 自动把资源包安装到 `resourcepacks/NHTranslationUpdate.zip`，并写入 `options.txt` 启用它。
-- 安装 GTNH 任务书等必须由 TX Loader 读取的覆盖文件。
-- 默认仅允许覆盖 `resources/`、`config/txloader/`、BetterLoadingScreen、Amazing Trophies 和 InGameInfoXML 的汉化目录。
-- 保存被替换文件的备份；清理旧版本时，只删除本模组管理且未被用户修改的文件。
-- 支持客户端与服务端。资源包只在客户端安装，任务书覆盖包可在两端安装。
+- 下载包含所有翻译内容的统一 ZIP 包，在**内存**中提供所有翻译资源，无需解压到磁盘。
+- 通过 ASM 变换（`@SortingIndex(2000)`）将翻译资源包注入到资源包链最末尾，优先级高于 TX Loader 的 `forceload` 包。
+- 自动设置 `options.txt` 中的 `lang` 选项为配置的语言（默认 `zh_CN`）。
+- 支持客户端与服务端。ASM 资源包注入仅对客户端生效，但文件下载两端均可运行。
 
-它不会从更新站点安装模组、脚本、存档或可执行文件，也不会解压任何越过白名单目录的路径。
+它不会从更新站点安装模组、脚本、存档或可执行文件。
 
 ## 玩家安装
 
@@ -39,12 +37,11 @@ python tools/build_update.py \
 
 输出包括：
 
-- `site/manifest.json`：客户端读取的稳定入口；
-- `site/releases/<release>/gtnh-zh-cn-resource-pack.zip`：语言资源包；
-- `site/releases/<release>/gtnh-zh-cn-overlay.zip`：TX Loader 等覆盖文件；
+- `site/manifest.json`：客户端读取的稳定入口（schema v2）；
+- `site/releases/<release>/gtnh-zh-cn-translation.zip`：统一翻译 ZIP（`assets/` + `txloader/`）；
 - `site/index.html`：简单的当前版本页面。
 
-GitHub Actions 中的 **Publish translation update site** 可以手动选择汉化仓库、提交和 GTNH 版本，随后构建并发布到 GitHub Pages；它也会在每日汉化构建之后自动刷新。仓库设置中需要把 Pages 的 Source 设为 **GitHub Actions**。
+GitHub Actions 中的 **Publish translation update site** 可以手动选择汉化仓库、提交和 GTNH 版本，随后构建并发布到 GitHub Pages。
 
 ## 构建和测试
 
@@ -59,9 +56,23 @@ Windows 使用 `gradlew.bat build`。
 
 协议细节与威胁边界见 [docs/UPDATE_PROTOCOL.md](docs/UPDATE_PROTOCOL.md)。
 
-## 与参考模组的主要区别
+## 架构
 
-I18nUpdateMod3 是跨 Minecraft 版本、跨加载器的通用资源包下载器；NHTranslationUpdate 固定面向 Forge 1.7.10 和 GTNH，因此不需要做跨版本语言格式转换，反而需要处理 GTNH 的 `resources/`、TX Loader 与任务书汉化。这里使用 SHA-256、HTTPS、下载/解压上限、路径白名单、原子替换、归属索引与备份，远程清单不能自行指定任意安装目标。
+```
+CoreMod (SortingIndex 2000)
+  ├── injectData() → UpdateBootstrap.run()
+  │     └── UpdateService
+  │           ├── 下载 manifest.json (schema v2)
+  │           ├── 下载 unified translation ZIP
+  │           └── NHTranslationResourcePack.load(zip)
+  │                 └── 加载到 ConcurrentHashMap<String, byte[]>
+  │
+  └── getASMTransformerClass() → MinecraftClassTransformer
+        └── 在 Minecraft.refreshResources() 中
+            在 reloadResources(List) 调用前注入 hook
+              → MinecraftHook.insertPack()
+                  → 追加 NHTranslationResourcePack 到列表末尾
+```
 
 ## 许可
 

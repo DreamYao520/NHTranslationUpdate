@@ -4,14 +4,17 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import com.dreamyao.nhtranslationupdate.NHTranslationUpdate;
 import com.dreamyao.nhtranslationupdate.config.UpdateConfig;
-import com.dreamyao.nhtranslationupdate.install.OverlayInstaller;
-import com.dreamyao.nhtranslationupdate.install.ResourcePackInstaller;
 import com.dreamyao.nhtranslationupdate.manifest.UpdateManifest;
 import com.dreamyao.nhtranslationupdate.manifest.UpdateManifest.Artifact;
 import com.dreamyao.nhtranslationupdate.net.HttpClient;
+import com.dreamyao.nhtranslationupdate.resource.NHTranslationResourcePack;
 import com.dreamyao.nhtranslationupdate.util.Hashing;
 import com.dreamyao.nhtranslationupdate.util.IOUtil;
 import com.google.gson.Gson;
@@ -34,12 +37,11 @@ public final class UpdateService {
 
         Files.createDirectories(config.cacheDirectory);
         StateStore state = new StateStore(config.cacheDirectory);
-        ResourcePackInstaller resourcePackInstaller = new ResourcePackInstaller(config);
         Path manifestCache = config.cacheDirectory.resolve("manifest.json");
         UpdateManifest manifest = loadManifest(config, state, manifestCache);
 
         if (manifest == null) {
-            if (client && config.enableResourcePack) resourcePackInstaller.activate();
+            if (client) activateOptions(config);
             return "远程清单不可用，继续使用现有汉化";
         }
         if (!manifest.supportsPackVersion(config.packVersion)) {
@@ -50,38 +52,54 @@ public final class UpdateService {
                 .warn("packVersion is empty; applying the latest translation without an exact GTNH version check");
         }
 
-        HttpClient http = new HttpClient(config);
-        int installed = 0;
-        int failed = 0;
+        Artifact translationArtifact = null;
         for (Artifact artifact : manifest.artifacts) {
-            boolean applicable = ("resource_pack".equals(artifact.kind) && client && config.enableResourcePack)
-                || ("overlay".equals(artifact.kind) && config.enableOverlay);
-            if (!applicable) continue;
-            try {
-                if (alreadyInstalled(config, state, artifact)) {
-                    if ("resource_pack".equals(artifact.kind)) resourcePackInstaller.activate();
-                    continue;
-                }
-                Path archive = ensureArtifact(config, http, artifact);
-                if ("resource_pack".equals(artifact.kind)) {
-                    resourcePackInstaller.install(archive, artifact.sha256);
-                } else {
-                    new OverlayInstaller(config).install(archive, artifact.id, artifact.sha256);
-                }
-                state.setArtifactHash(artifact.id, artifact.sha256);
-                state.save();
-                installed++;
-            } catch (Exception exception) {
-                if (artifact.required) failed++;
-                NHTranslationUpdate.LOG.error("Failed to install translation artifact {}", artifact.id, exception);
+            if ("translation".equals(artifact.kind)) {
+                translationArtifact = artifact;
+                break;
             }
         }
-        state.setRelease(manifest.release);
-        state.save();
-        if (failed > 0) return "版本 " + manifest.release + " 部分更新失败，旧文件已保留";
-        if (installed == 0) return "汉化已是最新版本 " + manifest.release;
-        return "已安装汉化版本 " + manifest.release + "（" + installed + " 个组件）";
+        if (translationArtifact == null) {
+            return "远程清单未包含翻译组件";
+        }
+
+        HttpClient http = new HttpClient(config);
+        try {
+            if (alreadyLoaded(state, translationArtifact)) {
+                if (client) activateOptions(config);
+                return "汉化已是最新版本 " + manifest.release;
+            }
+            Path archive = ensureArtifact(config, http, translationArtifact);
+            NHTranslationResourcePack.load(archive, config.maxZipEntries, config.maxExtractedBytes);
+            state.setArtifactHash(translationArtifact.id, translationArtifact.sha256);
+            state.setRelease(manifest.release);
+            state.save();
+            if (client) activateOptions(config);
+            return "已安装汉化版本 " + manifest.release;
+        } catch (Exception exception) {
+            NHTranslationUpdate.LOG.error("Failed to install translation artifact", exception);
+            if (client && NHTranslationResourcePack.INSTANCE == null) {
+                // First install failed — try to load from a cached artifact
+                Path cached = config.cacheDirectory.resolve("artifacts")
+                    .resolve(translationArtifact.id + "-" + translationArtifact.sha256 + ".zip");
+                if (Files.isRegularFile(cached)) {
+                    try {
+                        NHTranslationResourcePack.load(cached, config.maxZipEntries, config.maxExtractedBytes);
+                        NHTranslationUpdate.LOG.warn("Loaded cached translation after fresh install failure");
+                    } catch (Exception e2) {
+                        NHTranslationUpdate.LOG.warn("Cached translation also failed to load", e2);
+                    }
+                }
+            }
+            if (client) activateOptions(config);
+            if (translationArtifact.required) {
+                return "版本 " + manifest.release + " 更新失败，旧文件已保留";
+            }
+            return "版本 " + manifest.release + " 更新失败（非必需），继续使用现有汉化";
+        }
     }
+
+    // ---- manifest loading -------------------------------------------------
 
     private static UpdateManifest loadManifest(UpdateConfig config, StateStore state, Path cache) throws IOException {
         boolean due = !Files.isRegularFile(cache)
@@ -116,13 +134,11 @@ public final class UpdateService {
         return manifest;
     }
 
-    private static boolean alreadyInstalled(UpdateConfig config, StateStore state, Artifact artifact)
-        throws IOException {
-        if (!artifact.sha256.equalsIgnoreCase(state.artifactHash(artifact.id))) return false;
-        if ("overlay".equals(artifact.kind)) return true;
-        Path pack = config.gameDirectory.resolve("resourcepacks")
-            .resolve(ResourcePackInstaller.FILE_NAME);
-        return Files.isRegularFile(pack) && artifact.sha256.equalsIgnoreCase(Hashing.sha256(pack));
+    // ---- artifact management ----------------------------------------------
+
+    private static boolean alreadyLoaded(StateStore state, Artifact artifact) {
+        return artifact.sha256.equalsIgnoreCase(state.artifactHash(artifact.id))
+            && NHTranslationResourcePack.INSTANCE != null;
     }
 
     private static Path ensureArtifact(UpdateConfig config, HttpClient http, Artifact artifact) throws IOException {
@@ -142,5 +158,37 @@ public final class UpdateService {
         }
         IOUtil.atomicMove(partial, cached);
         return cached;
+    }
+
+    // ---- options.txt ------------------------------------------------------
+
+    private static void activateOptions(UpdateConfig config) throws IOException {
+        if (!config.forceLanguage.isEmpty()) {
+            setOption(config.gameDirectory, "lang", config.forceLanguage);
+        }
+    }
+
+    private static void setOption(Path gameDirectory, String key, String value) throws IOException {
+        Path options = gameDirectory.resolve("options.txt");
+        List<String> original = Files.isRegularFile(options)
+            ? Files.readAllLines(options, StandardCharsets.UTF_8)
+            : new ArrayList<String>();
+        Map<String, String> values = new LinkedHashMap<>();
+        List<String> passthrough = new ArrayList<>();
+        for (String line : original) {
+            int separator = line.indexOf(':');
+            if (separator <= 0) passthrough.add(line);
+            else values.put(line.substring(0, separator), line.substring(separator + 1));
+        }
+        values.put(key, value);
+
+        List<String> updated = new ArrayList<>(passthrough);
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            updated.add(entry.getKey() + ":" + entry.getValue());
+        }
+        String content = String.join("\n", updated) + "\n";
+        String oldContent = String.join("\n", original) + (original.isEmpty() ? "" : "\n");
+        if (content.equals(oldContent)) return;
+        IOUtil.atomicWriteUtf8(options, content);
     }
 }

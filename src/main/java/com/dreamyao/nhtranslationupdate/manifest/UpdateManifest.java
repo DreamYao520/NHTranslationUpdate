@@ -14,13 +14,12 @@ public final class UpdateManifest {
     public List<Artifact> artifacts;
 
     public void validate() {
-        if (schemaVersion != 1) throw new IllegalArgumentException("Unsupported manifest schema: " + schemaVersion);
+        if (schemaVersion != 2) throw new IllegalArgumentException("Unsupported manifest schema: " + schemaVersion);
         if (!"1.7.10".equals(minecraftVersion)) {
             throw new IllegalArgumentException("Manifest is not for Minecraft 1.7.10");
         }
-        if (release == null || release.trim()
-            .isEmpty()) throw new IllegalArgumentException("Missing release");
-        if (artifacts == null) throw new IllegalArgumentException("Missing artifacts");
+        if (release == null || release.trim().isEmpty()) throw new IllegalArgumentException("Missing release");
+        if (artifacts == null || artifacts.isEmpty()) throw new IllegalArgumentException("Missing artifacts");
 
         Set<String> ids = new HashSet<>();
         for (Artifact artifact : artifacts) {
@@ -30,8 +29,7 @@ public final class UpdateManifest {
     }
 
     public boolean supportsPackVersion(String packVersion) {
-        if (packVersion == null || packVersion.trim()
-            .isEmpty() || packVersions == null || packVersions.isEmpty()) {
+        if (packVersion == null || packVersion.trim().isEmpty() || packVersions == null || packVersions.isEmpty()) {
             return true;
         }
         for (String supported : packVersions) {
@@ -54,11 +52,10 @@ public final class UpdateManifest {
                 throw new IllegalArgumentException("Invalid artifact id: " + id);
             }
             kind = kind == null ? "" : kind.toLowerCase(Locale.ROOT);
-            if (!"resource_pack".equals(kind) && !"overlay".equals(kind)) {
-                throw new IllegalArgumentException("Invalid artifact kind: " + kind);
+            if (!"translation".equals(kind)) {
+                throw new IllegalArgumentException("Invalid artifact kind: " + kind + " (expected translation)");
             }
-            if (url == null || url.trim()
-                .isEmpty()) throw new IllegalArgumentException("Missing URL for " + id);
+            if (url == null || url.trim().isEmpty()) throw new IllegalArgumentException("Missing URL for " + id);
             if (sha256 == null || !sha256.matches("(?i)[0-9a-f]{64}")) {
                 throw new IllegalArgumentException("Invalid SHA-256 for " + id);
             }

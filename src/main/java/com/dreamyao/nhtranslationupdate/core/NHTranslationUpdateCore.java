@@ -11,11 +11,15 @@ import cpw.mods.fml.relauncher.IFMLLoadingPlugin;
 @IFMLLoadingPlugin.Name("NHTranslationUpdateCore")
 @IFMLLoadingPlugin.MCVersion("1.7.10")
 @IFMLLoadingPlugin.TransformerExclusions("com.dreamyao.nhtranslationupdate")
+@IFMLLoadingPlugin.SortingIndex(2000)
 public final class NHTranslationUpdateCore implements IFMLLoadingPlugin {
 
     @Override
     public String[] getASMTransformerClass() {
-        return new String[0];
+        if (FMLLaunchHandler.side().isClient()) {
+            return new String[] { MinecraftClassTransformer.class.getName() };
+        }
+        return null;
     }
 
     @Override
