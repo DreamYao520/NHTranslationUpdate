@@ -99,7 +99,6 @@ public final class HttpClient {
         long total = 0;
         int read;
         while ((read = input.read(buffer)) >= 0) {
-            if (read == 0) continue;
             total += read;
             if (total > maximumBytes) throw new IOException("Download exceeded size limit");
             output.write(buffer, 0, read);

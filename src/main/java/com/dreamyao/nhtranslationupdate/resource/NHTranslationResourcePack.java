@@ -4,11 +4,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -51,7 +47,7 @@ public final class NHTranslationResourcePack implements IResourcePack {
     }
 
     public static void load(java.nio.file.Path zipPath, int maxEntries, long maxBytes) throws IOException {
-        Map<String, byte[]> entries = new ConcurrentHashMap<>();
+        Map<String, byte[]> entries = new HashMap<>();
         int count = 0;
         long expanded = 0;
         byte[] buffer = new byte[64 * 1024];
@@ -73,7 +69,6 @@ public final class NHTranslationResourcePack implements IResourcePack {
                 java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
                 int read;
                 while ((read = zip.read(buffer)) >= 0) {
-                    if (read == 0) continue;
                     expanded += read;
                     if (expanded > maxBytes) {
                         throw new IOException("Translation pack expands past limit");
@@ -84,7 +79,7 @@ public final class NHTranslationResourcePack implements IResourcePack {
                 zip.closeEntry();
             }
         }
-        INSTANCE = new NHTranslationResourcePack(entries);
+        INSTANCE = new NHTranslationResourcePack(Collections.unmodifiableMap(entries));
     }
 
     // ---- IResourcePack ---------------------------------------------------

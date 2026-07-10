@@ -101,7 +101,7 @@ public final class UpdateService {
 
     // ---- manifest loading -------------------------------------------------
 
-    private static UpdateManifest loadManifest(UpdateConfig config, StateStore state, Path cache) throws IOException {
+    static UpdateManifest loadManifest(UpdateConfig config, StateStore state, Path cache) throws IOException {
         boolean due = !Files.isRegularFile(cache)
             || System.currentTimeMillis() - state.lastCheck() >= config.checkIntervalMillis;
         if (due && !config.manifestUrl.isEmpty()) {
@@ -113,9 +113,8 @@ public final class UpdateService {
                 state.save();
                 return manifest;
             } catch (Exception exception) {
-                NHTranslationUpdate.LOG.warn("Could not refresh translation manifest: {}", exception.toString());
-                state.setLastCheck(System.currentTimeMillis());
-                state.save();
+                NHTranslationUpdate.LOG.warn("Could not refresh translation manifest, will retry on next launch: {}", exception.toString());
+                // Don't update lastCheck on failure — retry on next launch
             }
         }
         if (!Files.isRegularFile(cache)) return null;
