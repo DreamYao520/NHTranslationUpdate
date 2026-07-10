@@ -50,7 +50,7 @@ jobs:
           python-version: '3.12'
       - name: Configure Pages
         id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Resolve release metadata
         id: metadata
         shell: bash
@@ -79,9 +79,9 @@ jobs:
           --release "${{ steps.metadata.outputs.release }}"
           --pack-version "${{ steps.metadata.outputs.pack_version }}"
           --base-url "${{ steps.pages.outputs.base_url }}"
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - name: Deploy Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

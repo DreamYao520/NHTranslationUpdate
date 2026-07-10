@@ -44,7 +44,7 @@ python tools/build_update.py \
 - `site/releases/<release>/gtnh-zh-cn-overlay.zip`：TX Loader 等覆盖文件；
 - `site/index.html`：简单的当前版本页面。
 
-GitHub Actions 中的 **Publish translation update site** 可以手动选择汉化仓库、提交和 GTNH 版本，随后构建并发布到 GitHub Pages。仓库设置中需要把 Pages 的 Source 设为 **GitHub Actions**。
+GitHub Actions 中的 **Publish translation update site** 可以手动选择汉化仓库、提交和 GTNH 版本，随后构建并发布到 GitHub Pages；它也会在每日汉化构建之后自动刷新。仓库设置中需要把 Pages 的 Source 设为 **GitHub Actions**。
 
 ## 构建和测试
 
