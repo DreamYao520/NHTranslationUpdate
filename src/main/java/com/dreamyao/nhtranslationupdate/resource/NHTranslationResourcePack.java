@@ -28,7 +28,7 @@ import net.minecraft.util.ResourceLocation;
  */
 public final class NHTranslationResourcePack implements IResourcePack {
 
-    static volatile NHTranslationResourcePack INSTANCE;
+    public static volatile NHTranslationResourcePack INSTANCE;
 
     private final Map<String, byte[]> entries;
     private final Set<String> domains;
