@@ -28,7 +28,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -59,10 +59,10 @@ jobs:
           SOURCE_SHA=$(git -C translation-source rev-parse --short=12 HEAD)
           PACK_VERSION='${{ inputs.pack_version }}'
           if [[ -z "$PACK_VERSION" ]]; then
-            PACK_VERSION=$(sed -nE 's/.*([0-9]+\.[0-9]+\.[0-9]+) 版本汉化.*/\1/p' translation-source/README.md | head -n 1)
+            PACK_VERSION=$(tr -d '[:space:]' < update/current-pack-version.txt)
           fi
           if [[ -z "$PACK_VERSION" ]]; then
-            echo 'Could not determine GTNH version; use the pack_version input.' >&2
+            echo 'Could not determine GTNH version; set update/current-pack-version.txt or use pack_version.' >&2
             exit 1
           fi
           RELEASE='${{ inputs.release }}'
@@ -79,6 +79,7 @@ jobs:
           --release "${{ steps.metadata.outputs.release }}"
           --pack-version "${{ steps.metadata.outputs.pack_version }}"
           --base-url "${{ steps.pages.outputs.base_url }}"
+          --existing-site-url "${{ steps.pages.outputs.base_url }}"
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site

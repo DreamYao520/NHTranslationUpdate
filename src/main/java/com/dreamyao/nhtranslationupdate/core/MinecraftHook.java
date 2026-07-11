@@ -2,6 +2,9 @@ package com.dreamyao.nhtranslationupdate.core;
 
 import java.util.List;
 
+import net.minecraft.client.Minecraft;
+
+import com.dreamyao.nhtranslationupdate.resource.LanguageGate;
 import com.dreamyao.nhtranslationupdate.resource.NHTranslationResourcePack;
 
 /**
@@ -15,8 +18,16 @@ public final class MinecraftHook {
     private MinecraftHook() {}
 
     public static List<Object> insertPack(List<Object> resourcePackList) {
+        for (int index = resourcePackList.size() - 1; index >= 0; index--) {
+            if (resourcePackList.get(index) instanceof NHTranslationResourcePack) {
+                resourcePackList.remove(index);
+            }
+        }
+
         NHTranslationResourcePack pack = NHTranslationResourcePack.INSTANCE;
-        if (pack != null) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        String language = minecraft.gameSettings == null ? null : minecraft.gameSettings.language;
+        if (pack != null && LanguageGate.shouldApply(language)) {
             resourcePackList.add(pack);
         }
         return resourcePackList;

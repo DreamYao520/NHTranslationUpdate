@@ -12,12 +12,16 @@ public final class IOUtil {
     private IOUtil() {}
 
     public static void atomicWriteUtf8(Path target, String content) throws IOException {
+        atomicWrite(target, content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static void atomicWrite(Path target, byte[] content) throws IOException {
         Files.createDirectories(
             target.toAbsolutePath()
                 .normalize()
                 .getParent());
         Path temporary = target.resolveSibling(target.getFileName() + ".nhtranslationupdate.tmp");
-        Files.write(temporary, content.getBytes(StandardCharsets.UTF_8));
+        Files.write(temporary, content);
         atomicMove(temporary, target);
     }
 

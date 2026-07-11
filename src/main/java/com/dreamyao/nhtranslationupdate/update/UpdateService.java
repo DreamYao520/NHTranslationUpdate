@@ -4,19 +4,19 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
 import com.dreamyao.nhtranslationupdate.NHTranslationUpdate;
 import com.dreamyao.nhtranslationupdate.config.UpdateConfig;
 import com.dreamyao.nhtranslationupdate.manifest.UpdateManifest;
 import com.dreamyao.nhtranslationupdate.manifest.UpdateManifest.Artifact;
+import com.dreamyao.nhtranslationupdate.manifest.UpdateManifest.PackRelease;
 import com.dreamyao.nhtranslationupdate.net.HttpClient;
 import com.dreamyao.nhtranslationupdate.resource.NHTranslationResourcePack;
+import com.dreamyao.nhtranslationupdate.update.StateStore.LastKnownGood;
 import com.dreamyao.nhtranslationupdate.util.Hashing;
 import com.dreamyao.nhtranslationupdate.util.IOUtil;
+import com.dreamyao.nhtranslationupdate.version.PackVersionDetector;
+import com.dreamyao.nhtranslationupdate.version.PackVersionDetector.Result;
 import com.google.gson.Gson;
 
 public final class UpdateService {
@@ -34,68 +34,71 @@ public final class UpdateService {
     public String run() throws IOException {
         UpdateConfig config = UpdateConfig.load(gameDirectory);
         if (!config.enabled) return "自动更新已禁用";
+        if (!client) return "服务端无需加载客户端汉化资源";
+
+        Result detected = PackVersionDetector.detect(gameDirectory, config.packVersion);
+        if (detected == null) {
+            NHTranslationUpdate.LOG.warn("Could not detect the GTNH version; no translation pack will be applied");
+            return "无法检测 GTNH 版本，未应用汉化（可在配置中设置 packVersion）";
+        }
+        String packVersion = detected.version;
+        NHTranslationUpdate.LOG.info("Detected GTNH {} from {}", packVersion, detected.source);
 
         Files.createDirectories(config.cacheDirectory);
         StateStore state = new StateStore(config.cacheDirectory);
+        LastKnownGood loaded = loadLastKnownGood(config, state, packVersion);
+
         Path manifestCache = config.cacheDirectory.resolve("manifest.json");
         UpdateManifest manifest = loadManifest(config, state, manifestCache);
-
         if (manifest == null) {
-            if (client) activateOptions(config);
-            return "远程清单不可用，继续使用现有汉化";
-        }
-        if (!manifest.supportsPackVersion(config.packVersion)) {
-            return "汉化版本 " + manifest.release + " 不支持配置的 GTNH " + config.packVersion;
-        }
-        if (config.packVersion.isEmpty() && manifest.packVersions != null && !manifest.packVersions.isEmpty()) {
-            NHTranslationUpdate.LOG
-                .warn("packVersion is empty; applying the latest translation without an exact GTNH version check");
+            return loaded == null ? "更新清单不可用，当前版本没有可用的缓存汉化" : "更新清单不可用，继续使用汉化 " + loaded.release;
         }
 
-        Artifact translationArtifact = null;
-        for (Artifact artifact : manifest.artifacts) {
-            if ("translation".equals(artifact.kind)) {
-                translationArtifact = artifact;
-                break;
-            }
+        PackRelease release = manifest.select(packVersion);
+        if (release == null) {
+            return loaded == null ? "更新站暂未提供 GTNH " + packVersion + " 的汉化"
+                : "更新站暂无 GTNH " + packVersion + " 的新汉化，继续使用 " + loaded.release;
         }
-        if (translationArtifact == null) {
-            return "远程清单未包含翻译组件";
+        Artifact artifact = release.translationArtifact();
+        if (artifact == null) return "GTNH " + packVersion + " 的发布记录没有翻译包";
+
+        if (loaded != null && artifact.sha256.equalsIgnoreCase(loaded.sha256)) {
+            return "GTNH " + packVersion + " 汉化已是最新版本 " + release.release;
         }
 
-        HttpClient http = new HttpClient(config);
         try {
-            if (alreadyLoaded(state, translationArtifact)) {
-                if (client) activateOptions(config);
-                return "汉化已是最新版本 " + manifest.release;
-            }
-            Path archive = ensureArtifact(config, http, translationArtifact);
-            NHTranslationResourcePack.load(archive, config.maxZipEntries, config.maxExtractedBytes);
-            state.setArtifactHash(translationArtifact.id, translationArtifact.sha256);
-            state.setRelease(manifest.release);
+            Path archive = ensureArtifact(config, new HttpClient(config), artifact);
+            NHTranslationResourcePack
+                .load(archive, config.gameDirectory, config.maxZipEntries, config.maxExtractedBytes);
+            state.setLastKnownGood(packVersion, release.release, artifact);
             state.save();
-            if (client) activateOptions(config);
-            return "已安装汉化版本 " + manifest.release;
+            return "已准备 GTNH " + packVersion + " 汉化 " + release.release;
         } catch (Exception exception) {
-            NHTranslationUpdate.LOG.error("Failed to install translation artifact", exception);
-            if (client && NHTranslationResourcePack.INSTANCE == null) {
-                // First install failed — try to load from a cached artifact
-                Path cached = config.cacheDirectory.resolve("artifacts")
-                    .resolve(translationArtifact.id + "-" + translationArtifact.sha256 + ".zip");
-                if (Files.isRegularFile(cached)) {
-                    try {
-                        NHTranslationResourcePack.load(cached, config.maxZipEntries, config.maxExtractedBytes);
-                        NHTranslationUpdate.LOG.warn("Loaded cached translation after fresh install failure");
-                    } catch (Exception e2) {
-                        NHTranslationUpdate.LOG.warn("Cached translation also failed to load", e2);
-                    }
-                }
+            NHTranslationUpdate.LOG.error("Failed to install translation artifact for GTNH " + packVersion, exception);
+            return loaded == null ? "汉化 " + release.release + " 更新失败，当前没有可用缓存"
+                : "汉化 " + release.release + " 更新失败，继续使用 " + loaded.release;
+        }
+    }
+
+    private static LastKnownGood loadLastKnownGood(UpdateConfig config, StateStore state, String packVersion) {
+        LastKnownGood saved = state.lastKnownGood();
+        if (saved == null || !packVersion.equalsIgnoreCase(saved.packVersion)) return null;
+
+        Path archive = artifactPath(config, saved.artifactId, saved.sha256);
+        if (!Files.isRegularFile(archive)) return null;
+        try {
+            if (!saved.sha256.equalsIgnoreCase(Hashing.sha256(archive))) {
+                NHTranslationUpdate.LOG.warn("Ignoring corrupt cached translation {}", archive);
+                return null;
             }
-            if (client) activateOptions(config);
-            if (translationArtifact.required) {
-                return "版本 " + manifest.release + " 更新失败，旧文件已保留";
-            }
-            return "版本 " + manifest.release + " 更新失败（非必需），继续使用现有汉化";
+            NHTranslationResourcePack
+                .load(archive, config.gameDirectory, config.maxZipEntries, config.maxExtractedBytes);
+            NHTranslationUpdate.LOG
+                .info("Loaded last-known-good translation {} for GTNH {}", saved.release, packVersion);
+            return saved;
+        } catch (Exception exception) {
+            NHTranslationUpdate.LOG.warn("Could not load last-known-good translation " + archive, exception);
+            return null;
         }
     }
 
@@ -116,7 +119,7 @@ public final class UpdateService {
                 NHTranslationUpdate.LOG.warn(
                     "Could not refresh translation manifest, will retry on next launch: {}",
                     exception.toString());
-                // Don't update lastCheck on failure — retry on next launch
+                // Do not update lastCheck on failure, so the next launch retries.
             }
         }
         if (!Files.isRegularFile(cache)) return null;
@@ -137,15 +140,10 @@ public final class UpdateService {
 
     // ---- artifact management ----------------------------------------------
 
-    private static boolean alreadyLoaded(StateStore state, Artifact artifact) {
-        return artifact.sha256.equalsIgnoreCase(state.artifactHash(artifact.id))
-            && NHTranslationResourcePack.INSTANCE != null;
-    }
-
     private static Path ensureArtifact(UpdateConfig config, HttpClient http, Artifact artifact) throws IOException {
         Path directory = config.cacheDirectory.resolve("artifacts");
         Files.createDirectories(directory);
-        Path cached = directory.resolve(artifact.id + "-" + artifact.sha256 + ".zip");
+        Path cached = artifactPath(config, artifact.id, artifact.sha256);
         if (Files.isRegularFile(cached)) {
             if (artifact.sha256.equalsIgnoreCase(Hashing.sha256(cached))) return cached;
             Files.delete(cached);
@@ -161,34 +159,8 @@ public final class UpdateService {
         return cached;
     }
 
-    // ---- options.txt ------------------------------------------------------
-
-    private static void activateOptions(UpdateConfig config) throws IOException {
-        if (!config.forceLanguage.isEmpty()) {
-            setOption(config.gameDirectory, "lang", config.forceLanguage);
-        }
-    }
-
-    private static void setOption(Path gameDirectory, String key, String value) throws IOException {
-        Path options = gameDirectory.resolve("options.txt");
-        List<String> original = Files.isRegularFile(options) ? Files.readAllLines(options, StandardCharsets.UTF_8)
-            : new ArrayList<String>();
-        Map<String, String> values = new LinkedHashMap<>();
-        List<String> passthrough = new ArrayList<>();
-        for (String line : original) {
-            int separator = line.indexOf(':');
-            if (separator <= 0) passthrough.add(line);
-            else values.put(line.substring(0, separator), line.substring(separator + 1));
-        }
-        values.put(key, value);
-
-        List<String> updated = new ArrayList<>(passthrough);
-        for (Map.Entry<String, String> entry : values.entrySet()) {
-            updated.add(entry.getKey() + ":" + entry.getValue());
-        }
-        String content = String.join("\n", updated) + "\n";
-        String oldContent = String.join("\n", original) + (original.isEmpty() ? "" : "\n");
-        if (content.equals(oldContent)) return;
-        IOUtil.atomicWriteUtf8(options, content);
+    private static Path artifactPath(UpdateConfig config, String artifactId, String sha256) {
+        return config.cacheDirectory.resolve("artifacts")
+            .resolve(artifactId + "-" + sha256.toLowerCase(java.util.Locale.ROOT) + ".zip");
     }
 }

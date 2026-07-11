@@ -17,17 +17,20 @@ import net.minecraft.client.resources.data.IMetadataSection;
 import net.minecraft.client.resources.data.IMetadataSerializer;
 import net.minecraft.util.ResourceLocation;
 
+import com.dreamyao.nhtranslationupdate.util.IOUtil;
+
 /**
  * In-memory resource pack serving translation files from a single unified ZIP.
  * Inserted at the highest priority position in the resource-pack chain so it
  * overrides all other packs — including TX Loader's forceload pack.
  *
  * <p>
- * Lookup order for each {@link ResourceLocation}: {@code assets/domain/path},
- * then {@code txloader/domain/path}.
+ * The publisher has already merged standard, TX Loader load, and TX Loader
+ * forceload resources into one {@code assets/domain/path} namespace.
  */
 public final class NHTranslationResourcePack implements IResourcePack {
 
+    private static final String GREGTECH_LANGUAGE = "install/config/GregTech_zh_CN.lang";
     public static volatile NHTranslationResourcePack INSTANCE;
 
     private final Map<String, byte[]> entries;
@@ -41,17 +44,16 @@ public final class NHTranslationResourcePack implements IResourcePack {
                 int start = "assets/".length();
                 int slash = key.indexOf('/', start);
                 if (slash > start) domainSet.add(key.substring(start, slash));
-            } else if (key.startsWith("txloader/")) {
-                int start = "txloader/".length();
-                int slash = key.indexOf('/', start);
-                if (slash > start) domainSet.add(key.substring(start, slash));
             }
         }
         this.domains = Collections.unmodifiableSet(domainSet);
     }
 
-    public static void load(java.nio.file.Path zipPath, int maxEntries, long maxBytes) throws IOException {
+    public static void load(java.nio.file.Path zipPath, java.nio.file.Path gameDirectory, int maxEntries, long maxBytes)
+        throws IOException {
         Map<String, byte[]> entries = new HashMap<>();
+        Set<String> archiveNames = new HashSet<>();
+        byte[] gregtechLanguage = null;
         int count = 0;
         long expanded = 0;
         byte[] buffer = new byte[64 * 1024];
@@ -71,6 +73,7 @@ public final class NHTranslationResourcePack implements IResourcePack {
                     || name.contains(":")) {
                     throw new IOException("Unsafe archive path: " + name);
                 }
+                if (!archiveNames.add(name)) throw new IOException("Duplicate archive path: " + name);
                 if (entry.isDirectory()) continue;
 
                 java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
@@ -82,9 +85,17 @@ public final class NHTranslationResourcePack implements IResourcePack {
                     }
                     bos.write(buffer, 0, read);
                 }
-                entries.put(name, bos.toByteArray());
+                byte[] data = bos.toByteArray();
+                if (GREGTECH_LANGUAGE.equals(name)) {
+                    gregtechLanguage = data;
+                } else if (name.startsWith("assets/")) {
+                    entries.put(name, data);
+                }
                 zip.closeEntry();
             }
+        }
+        if (gregtechLanguage != null) {
+            IOUtil.atomicWrite(gameDirectory.resolve("config/GregTech_zh_CN.lang"), gregtechLanguage);
         }
         INSTANCE = new NHTranslationResourcePack(Collections.unmodifiableMap(entries));
     }
@@ -126,7 +137,6 @@ public final class NHTranslationResourcePack implements IResourcePack {
     private byte[] lookup(ResourceLocation rl) {
         String domain = rl.getResourceDomain();
         String path = rl.getResourcePath();
-        byte[] data = entries.get("assets/" + domain + "/" + path);
-        return data != null ? data : entries.get("txloader/" + domain + "/" + path);
+        return entries.get("assets/" + domain + "/" + path);
     }
 }

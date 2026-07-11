@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
+import com.dreamyao.nhtranslationupdate.manifest.UpdateManifest.Artifact;
 import com.dreamyao.nhtranslationupdate.util.IOUtil;
 
 final class StateStore {
@@ -36,16 +37,24 @@ final class StateStore {
         properties.setProperty("lastCheckEpochMillis", Long.toString(value));
     }
 
-    String artifactHash(String id) {
-        return properties.getProperty("artifact." + id + ".sha256", "");
+    LastKnownGood lastKnownGood() {
+        String packVersion = properties.getProperty("lastKnownGood.packVersion", "");
+        String release = properties.getProperty("lastKnownGood.release", "");
+        String artifactId = properties.getProperty("lastKnownGood.artifactId", "");
+        String sha256 = properties.getProperty("lastKnownGood.sha256", "");
+        if (packVersion.isEmpty() || release.isEmpty()
+            || !artifactId.matches("[A-Za-z0-9._-]{1,80}")
+            || !sha256.matches("(?i)[0-9a-f]{64}")) {
+            return null;
+        }
+        return new LastKnownGood(packVersion, release, artifactId, sha256.toLowerCase(java.util.Locale.ROOT));
     }
 
-    void setArtifactHash(String id, String sha256) {
-        properties.setProperty("artifact." + id + ".sha256", sha256);
-    }
-
-    void setRelease(String release) {
-        properties.setProperty("release", release);
+    void setLastKnownGood(String packVersion, String release, Artifact artifact) {
+        properties.setProperty("lastKnownGood.packVersion", packVersion);
+        properties.setProperty("lastKnownGood.release", release);
+        properties.setProperty("lastKnownGood.artifactId", artifact.id);
+        properties.setProperty("lastKnownGood.sha256", artifact.sha256);
     }
 
     void save() throws IOException {
@@ -54,5 +63,20 @@ final class StateStore {
             properties.store(output, "NH Translation Update managed state");
         }
         IOUtil.atomicMove(temporary, file);
+    }
+
+    static final class LastKnownGood {
+
+        final String packVersion;
+        final String release;
+        final String artifactId;
+        final String sha256;
+
+        private LastKnownGood(String packVersion, String release, String artifactId, String sha256) {
+            this.packVersion = packVersion;
+            this.release = release;
+            this.artifactId = artifactId;
+            this.sha256 = sha256;
+        }
     }
 }

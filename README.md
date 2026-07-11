@@ -2,14 +2,17 @@
 
 面向 **GT New Horizons / Minecraft 1.7.10** 的简体中文汉化自动更新模组。
 
-模组通过 ASM 字节码变换在游戏资源加载链中插入一个自定义 `IResourcePack`，从远程清单下载统一的翻译 ZIP，在内存中提供所有汉化资源（标准 Minecraft 语言文件 + TX Loader 资源），并在 TX Loader 的 `forceload` 包之后注入以确保持最高优先级。网络不可用或更新失败时继续使用上一版汉化。
+模组从远程清单下载与当前 GTNH 版本精确匹配的翻译包，并通过自定义 `IResourcePack` 把汉化插入资源加载链末尾，优先级高于 TX Loader 的 `forceload` 资源包。网络不可用或更新失败时，只会回退到同一 GTNH 版本最后一次验证成功的汉化。
 
-## 能做什么
+## 主要行为
 
-- 下载包含所有翻译内容的统一 ZIP 包，在**内存**中提供所有翻译资源，无需解压到磁盘。
-- 通过 ASM 变换（`@SortingIndex(2000)`）将翻译资源包注入到资源包链最末尾，优先级高于 TX Loader 的 `forceload` 包。
-- 自动设置 `options.txt` 中的 `lang` 选项为配置的语言（默认 `zh_CN`）。
-- 支持客户端与服务端。ASM 资源包注入仅对客户端生效，但文件下载两端均可运行。
+- 自动读取 `config/txloader/load/mainmenu/version.txt`；不存在时读取 `config/GTNewHorizons/dreamcraft.cfg` 的 `S:ModPackVersion=`。
+- 远程清单按 GTNH 版本分别记录翻译包，不会把其他版本的汉化当成“最新版”安装。
+- 发布时按 `resources → txloader/load → txloader/forceload` 合并同一资源；后面的同名语言键拥有更高优先级。
+- 仅当玩家当前语言是 `zh_CN` 时才把资源包加入 Minecraft。模组不会修改 `options.txt`，也不会替玩家更改语言。
+- 玩家在游戏内切换到简体中文时，Minecraft 刷新资源后立即启用；切换到其他语言时立即移除。
+- `GregTech.lang` 会以 `config/GregTech_zh_CN.lang` 安装。GregTech 只会在玩家选择简体中文时读取它。
+- 专用服务端不下载也不加载客户端汉化。
 
 它不会从更新站点安装模组、脚本、存档或可执行文件。
 
@@ -18,13 +21,12 @@
 1. 从 Releases 下载模组 jar，放进 GTNH 实例的 `mods/`。
 2. 首次启动会生成 `config/nhtranslationupdate.properties`。
 3. 默认更新地址为 `https://dreamyao520.github.io/NHTranslationUpdate/manifest.json`。
-4. 推荐在配置中填写精确的 `packVersion`，例如 `2.8.4`，然后重启。
-
-模组默认把语言设为 `zh_CN`。若不希望它改语言，把 `forceLanguage` 留空。
+4. 正常情况下保持 `packVersion=` 为空即可自动识别；只有自定义实例无法识别时才手动填写。
+5. 游戏会保持原来的语言。玩家手动选择“简体中文”后才会应用汉化。
 
 ## 汉化发布
 
-仓库附带了一个只使用 Python 标准库的发布器，可直接读取 `Translation-of-GTNH` 的现有目录结构：
+发布器可直接读取 `Translation-of-GTNH` 的目录结构：
 
 ```text
 python tools/build_update.py \
@@ -32,48 +34,40 @@ python tools/build_update.py \
   --output site \
   --release 2.8.4-cn.1 \
   --pack-version 2.8.4 \
-  --base-url https://dreamyao520.github.io/NHTranslationUpdate
+  --base-url https://dreamyao520.github.io/NHTranslationUpdate \
+  --existing-site-url https://dreamyao520.github.io/NHTranslationUpdate
 ```
+
+`--existing-site-url` 会下载并校验站点现有的 schema v3 目录和历史版本翻译包，再加入本次版本，防止部署新版本时删除旧版本。
+
+定时发布所对应的 GTNH 版本写在 `update/current-pack-version.txt`。GTNH 大版本变化时应先确认翻译仓库已适配，再修改这个文件；手动运行工作流时也可用 `pack_version` 覆盖。
 
 输出包括：
 
-- `site/manifest.json`：客户端读取的稳定入口（schema v2）；
-- `site/releases/<release>/gtnh-zh-cn-translation.zip`：统一翻译 ZIP（`assets/` + `txloader/`）；
-- `site/index.html`：简单的当前版本页面。
-
-GitHub Actions 中的 **Publish translation update site** 可以手动选择汉化仓库、提交和 GTNH 版本，随后构建并发布到 GitHub Pages。
+- `site/manifest.json`：按 GTNH 版本索引的 schema v3 清单；
+- `site/releases/<release>/gtnh-zh-cn-translation.zip`：已经扁平合并的统一翻译包；
+- `site/index.html`：已发布版本列表。
 
 ## 构建和测试
 
-需要 JDK 21 来运行当前 Gradle，产物仍是 Java 8 字节码，可在 GTNH 支持的 Java 8 及现代 Java 环境中运行。
+需要 JDK 21 来运行当前 Gradle；产物仍是 Java 8 字节码。
 
 ```text
 ./gradlew build
 python -m unittest discover -s tests -v
 ```
 
-Windows 使用 `gradlew.bat build`。
-
-协议细节与威胁边界见 [docs/UPDATE_PROTOCOL.md](docs/UPDATE_PROTOCOL.md)。
+Windows 使用 `gradlew.bat build`。协议细节见 [docs/UPDATE_PROTOCOL.md](docs/UPDATE_PROTOCOL.md)。
 
 ## 架构
 
-```
+```text
 CoreMod (SortingIndex 2000)
-  ├── injectData() → UpdateBootstrap.run()
-  │     └── UpdateService
-  │           ├── 下载 manifest.json (schema v2)
-  │           ├── 下载 unified translation ZIP
-  │           └── NHTranslationResourcePack.load(zip)
-  │                 └── 加载到 ConcurrentHashMap<String, byte[]>
-  │
-  └── getASMTransformerClass() → MinecraftClassTransformer
-        └── 在 Minecraft.refreshResources() 中
-            在 reloadResources(List) 调用前注入 hook
-              → MinecraftHook.insertPack()
-                  → 追加 NHTranslationResourcePack 到列表末尾
+  ├── 检测 GTNH 版本 → schema v3 精确选包 → 校验并加载最后可用版本/新版本
+  └── Minecraft.refreshResources()
+        └── 仅 zh_CN：把 NHTranslationResourcePack 追加到 TX Loader 之后
 ```
 
 ## 许可
 
-模组与发布工具采用 MIT License。下载的汉化内容仍遵守其来源项目自己的许可；例如 `Translation-of-GTNH` 当前声明为 CC-BY-NC-SA，发布者需要保留署名与许可说明。
+模组与发布工具采用 MIT License。下载的汉化内容仍遵守来源项目自己的许可，发布者需要保留相应署名与许可说明。

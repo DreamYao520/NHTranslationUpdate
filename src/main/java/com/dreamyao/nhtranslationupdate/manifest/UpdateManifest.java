@@ -3,41 +3,70 @@ package com.dreamyao.nhtranslationupdate.manifest;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public final class UpdateManifest {
 
     public int schemaVersion;
-    public String release;
     public String minecraftVersion;
-    public List<String> packVersions;
-    public List<Artifact> artifacts;
+    public Map<String, PackRelease> packs;
 
     public void validate() {
-        if (schemaVersion != 2) throw new IllegalArgumentException("Unsupported manifest schema: " + schemaVersion);
+        if (schemaVersion != 3) throw new IllegalArgumentException("Unsupported manifest schema: " + schemaVersion);
         if (!"1.7.10".equals(minecraftVersion)) {
             throw new IllegalArgumentException("Manifest is not for Minecraft 1.7.10");
         }
-        if (release == null || release.trim()
-            .isEmpty()) throw new IllegalArgumentException("Missing release");
-        if (artifacts == null || artifacts.isEmpty()) throw new IllegalArgumentException("Missing artifacts");
+        if (packs == null || packs.isEmpty()) throw new IllegalArgumentException("Missing GTNH pack releases");
 
-        Set<String> ids = new HashSet<>();
-        for (Artifact artifact : artifacts) {
-            artifact.validate();
-            if (!ids.add(artifact.id)) throw new IllegalArgumentException("Duplicate artifact id: " + artifact.id);
+        for (Map.Entry<String, PackRelease> entry : packs.entrySet()) {
+            String packVersion = entry.getKey();
+            if (packVersion == null || !packVersion.matches("[A-Za-z0-9][A-Za-z0-9._+\\-]{0,79}")) {
+                throw new IllegalArgumentException("Invalid GTNH pack version: " + packVersion);
+            }
+            if (entry.getValue() == null) throw new IllegalArgumentException("Missing release for GTNH " + packVersion);
+            entry.getValue()
+                .validate(packVersion);
         }
     }
 
-    public boolean supportsPackVersion(String packVersion) {
-        if (packVersion == null || packVersion.trim()
-            .isEmpty() || packVersions == null || packVersions.isEmpty()) {
-            return true;
+    public PackRelease select(String packVersion) {
+        if (packVersion == null || packs == null) return null;
+        PackRelease exact = packs.get(packVersion);
+        if (exact != null) return exact;
+        for (Map.Entry<String, PackRelease> entry : packs.entrySet()) {
+            if (packVersion.equalsIgnoreCase(entry.getKey())) return entry.getValue();
         }
-        for (String supported : packVersions) {
-            if (packVersion.equalsIgnoreCase(supported.trim())) return true;
+        return null;
+    }
+
+    public static final class PackRelease {
+
+        public String release;
+        public List<Artifact> artifacts;
+
+        private void validate(String packVersion) {
+            if (release == null || release.trim()
+                .isEmpty()) throw new IllegalArgumentException("Missing release for GTNH " + packVersion);
+            if (artifacts == null || artifacts.isEmpty()) {
+                throw new IllegalArgumentException("Missing artifacts for GTNH " + packVersion);
+            }
+
+            Set<String> ids = new HashSet<>();
+            for (Artifact artifact : artifacts) {
+                if (artifact == null) throw new IllegalArgumentException("Missing artifact for GTNH " + packVersion);
+                artifact.validate();
+                if (!ids.add(artifact.id)) throw new IllegalArgumentException("Duplicate artifact id: " + artifact.id);
+            }
         }
-        return false;
+
+        public Artifact translationArtifact() {
+            if (artifacts == null) return null;
+            for (Artifact artifact : artifacts) {
+                if (artifact != null && "translation".equals(artifact.kind)) return artifact;
+            }
+            return null;
+        }
     }
 
     public static final class Artifact {
