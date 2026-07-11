@@ -113,7 +113,9 @@ public final class UpdateService {
                 state.save();
                 return manifest;
             } catch (Exception exception) {
-                NHTranslationUpdate.LOG.warn("Could not refresh translation manifest, will retry on next launch: {}", exception.toString());
+                NHTranslationUpdate.LOG.warn(
+                    "Could not refresh translation manifest, will retry on next launch: {}",
+                    exception.toString());
                 // Don't update lastCheck on failure — retry on next launch
             }
         }
@@ -169,8 +171,7 @@ public final class UpdateService {
 
     private static void setOption(Path gameDirectory, String key, String value) throws IOException {
         Path options = gameDirectory.resolve("options.txt");
-        List<String> original = Files.isRegularFile(options)
-            ? Files.readAllLines(options, StandardCharsets.UTF_8)
+        List<String> original = Files.isRegularFile(options) ? Files.readAllLines(options, StandardCharsets.UTF_8)
             : new ArrayList<String>();
         Map<String, String> values = new LinkedHashMap<>();
         List<String> passthrough = new ArrayList<>();

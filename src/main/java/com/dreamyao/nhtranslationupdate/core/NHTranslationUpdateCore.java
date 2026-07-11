@@ -16,7 +16,8 @@ public final class NHTranslationUpdateCore implements IFMLLoadingPlugin {
 
     @Override
     public String[] getASMTransformerClass() {
-        if (FMLLaunchHandler.side().isClient()) {
+        if (FMLLaunchHandler.side()
+            .isClient()) {
             return new String[] { MinecraftClassTransformer.class.getName() };
         }
         return null;

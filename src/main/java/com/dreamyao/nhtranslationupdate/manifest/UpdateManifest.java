@@ -18,7 +18,8 @@ public final class UpdateManifest {
         if (!"1.7.10".equals(minecraftVersion)) {
             throw new IllegalArgumentException("Manifest is not for Minecraft 1.7.10");
         }
-        if (release == null || release.trim().isEmpty()) throw new IllegalArgumentException("Missing release");
+        if (release == null || release.trim()
+            .isEmpty()) throw new IllegalArgumentException("Missing release");
         if (artifacts == null || artifacts.isEmpty()) throw new IllegalArgumentException("Missing artifacts");
 
         Set<String> ids = new HashSet<>();
@@ -29,7 +30,8 @@ public final class UpdateManifest {
     }
 
     public boolean supportsPackVersion(String packVersion) {
-        if (packVersion == null || packVersion.trim().isEmpty() || packVersions == null || packVersions.isEmpty()) {
+        if (packVersion == null || packVersion.trim()
+            .isEmpty() || packVersions == null || packVersions.isEmpty()) {
             return true;
         }
         for (String supported : packVersions) {
@@ -55,7 +57,8 @@ public final class UpdateManifest {
             if (!"translation".equals(kind)) {
                 throw new IllegalArgumentException("Invalid artifact kind: " + kind + " (expected translation)");
             }
-            if (url == null || url.trim().isEmpty()) throw new IllegalArgumentException("Missing URL for " + id);
+            if (url == null || url.trim()
+                .isEmpty()) throw new IllegalArgumentException("Missing URL for " + id);
             if (sha256 == null || !sha256.matches("(?i)[0-9a-f]{64}")) {
                 throw new IllegalArgumentException("Invalid SHA-256 for " + id);
             }

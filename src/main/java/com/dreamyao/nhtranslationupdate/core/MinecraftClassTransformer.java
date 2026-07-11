@@ -19,7 +19,7 @@ import com.dreamyao.nhtranslationupdate.NHTranslationUpdate;
  *
  * <p>
  * Uses {@code @SortingIndex(2000)} so it runs <em>after</em>
- * TX Loader (1001).  The hook is inserted just before
+ * TX Loader (1001). The hook is inserted just before
  * {@code Minecraft.reloadResources(List)}, which guarantees the translation
  * pack always sits at the end of the list — overriding everything including
  * TX Loader's {@code forceload} pack.
@@ -38,7 +38,7 @@ public final class MinecraftClassTransformer implements IClassTransformer {
     private static byte[] transformMinecraft(byte[] basicClass) {
         final boolean devEnv = (boolean) Launch.blackboard.get("fml.deobfuscatedEnvironment");
         final String targetMethod = devEnv ? "refreshResources" : "func_110436_a";
-        final String targetCall   = devEnv ? "reloadResources"  : "func_110541_a";
+        final String targetCall = devEnv ? "reloadResources" : "func_110541_a";
 
         final ClassNode classNode = new ClassNode();
         new ClassReader(basicClass).accept(classNode, 0);

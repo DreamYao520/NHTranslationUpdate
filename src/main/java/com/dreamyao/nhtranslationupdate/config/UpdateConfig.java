@@ -28,13 +28,17 @@ public final class UpdateConfig {
     public final Path cacheDirectory;
 
     private UpdateConfig(Path gameDirectory, Properties properties) {
-        this.gameDirectory = gameDirectory.toAbsolutePath().normalize();
+        this.gameDirectory = gameDirectory.toAbsolutePath()
+            .normalize();
         cacheDirectory = this.gameDirectory.resolve("nhtranslationupdate");
         enabled = bool(properties, "enabled", true);
         allowHttp = bool(properties, "allowHttp", false);
-        manifestUrl = properties.getProperty("manifestUrl", DEFAULT_MANIFEST).trim();
-        packVersion = properties.getProperty("packVersion", "").trim();
-        forceLanguage = properties.getProperty("forceLanguage", "zh_CN").trim();
+        manifestUrl = properties.getProperty("manifestUrl", DEFAULT_MANIFEST)
+            .trim();
+        packVersion = properties.getProperty("packVersion", "")
+            .trim();
+        forceLanguage = properties.getProperty("forceLanguage", "zh_CN")
+            .trim();
         checkIntervalMillis = positiveLong(properties, "checkIntervalHours", 24L) * 60L * 60L * 1000L;
         connectTimeoutMillis = positiveInt(properties, "connectTimeoutSeconds", 5) * 1000;
         readTimeoutMillis = positiveInt(properties, "readTimeoutSeconds", 30) * 1000;

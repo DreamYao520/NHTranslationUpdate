@@ -56,16 +56,19 @@ public final class NHTranslationResourcePack implements IResourcePack {
         long expanded = 0;
         byte[] buffer = new byte[64 * 1024];
         try (InputStream fileIn = java.nio.file.Files.newInputStream(zipPath);
-                ZipInputStream zip = new ZipInputStream(fileIn)) {
+            ZipInputStream zip = new ZipInputStream(fileIn)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
                 if (++count > maxEntries) {
                     throw new IOException("Translation pack has too many entries: " + count);
                 }
                 String name = entry.getName();
-                if (name == null || name.isEmpty() || name.indexOf('\0') >= 0
-                        || name.indexOf('\\') >= 0 || name.startsWith("/")
-                        || name.contains("..") || name.contains(":")) {
+                if (name == null || name.isEmpty()
+                    || name.indexOf('\0') >= 0
+                    || name.indexOf('\\') >= 0
+                    || name.startsWith("/")
+                    || name.contains("..")
+                    || name.contains(":")) {
                     throw new IOException("Unsafe archive path: " + name);
                 }
                 if (entry.isDirectory()) continue;
