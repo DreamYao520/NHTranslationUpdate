@@ -17,7 +17,6 @@ public final class UpdateConfig {
     public final boolean allowHttp;
     public final String manifestUrl;
     public final String packVersion;
-    public final String forceLanguage;
     public final long checkIntervalMillis;
     public final int connectTimeoutMillis;
     public final int readTimeoutMillis;
@@ -36,8 +35,6 @@ public final class UpdateConfig {
         manifestUrl = properties.getProperty("manifestUrl", DEFAULT_MANIFEST)
             .trim();
         packVersion = properties.getProperty("packVersion", "")
-            .trim();
-        forceLanguage = properties.getProperty("forceLanguage", "zh_CN")
             .trim();
         checkIntervalMillis = positiveLong(properties, "checkIntervalHours", 24L) * 60L * 60L * 1000L;
         connectTimeoutMillis = positiveInt(properties, "connectTimeoutSeconds", 5) * 1000;
@@ -77,7 +74,6 @@ public final class UpdateConfig {
         properties.setProperty("maxExtractedMiB", "512");
         properties.setProperty("maxZipEntries", "30000");
         properties.setProperty("allowHttp", "false");
-        properties.setProperty("forceLanguage", "zh_CN");
         return properties;
     }
 

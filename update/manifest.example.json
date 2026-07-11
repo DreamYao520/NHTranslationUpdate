@@ -1,18 +1,19 @@
 {
-  "schemaVersion": 2,
-  "release": "2.8.4-cn.1",
+  "schemaVersion": 3,
   "minecraftVersion": "1.7.10",
-  "packVersions": [
-    "2.8.4"
-  ],
-  "artifacts": [
-    {
-      "id": "gtnh-zh-cn-translation",
-      "kind": "translation",
-      "url": "https://example.invalid/releases/2.8.4-cn.1/gtnh-zh-cn-translation.zip",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "size": 1,
-      "required": true
+  "packs": {
+    "2.8.4": {
+      "release": "2.8.4-cn.1",
+      "artifacts": [
+        {
+          "id": "gtnh-zh-cn-translation",
+          "kind": "translation",
+          "url": "https://example.invalid/releases/2.8.4-cn.1/gtnh-zh-cn-translation.zip",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size": 1,
+          "required": true
+        }
+      ]
     }
-  ]
+  }
 }
