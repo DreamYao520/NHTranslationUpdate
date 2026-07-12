@@ -1,19 +1,20 @@
 # Update protocol v3
 
-`manifest.json` 是 UTF-8 JSON，最大 1 MiB。客户端只接受 `schemaVersion: 3` 与 `minecraftVersion: "1.7.10"`。
+`manifest.json` 是 UTF-8 JSON，最大 1 MiB。`languages` 是 schema v3 的向后兼容扩展；旧清单没有该字段时客户端按仅支持 `zh_CN` 处理。
 
 ```json
 {
   "schemaVersion": 3,
   "minecraftVersion": "1.7.10",
   "packs": {
-    "2.8.4": {
-      "release": "2.8.4-cn.1",
+    "2.9.0-beta-2": {
+      "release": "2.9.0-beta-2-multilang-abcdef123456",
+      "languages": ["de_DE", "es_ES", "fr_FR", "ja_JP", "ko_KR", "pl_PL", "pt_BR", "ru_RU", "tr_TR", "zh_CN"],
       "artifacts": [
         {
-          "id": "gtnh-zh-cn-translation",
+          "id": "gtnh-multilingual-translation",
           "kind": "translation",
-          "url": "https://example.org/releases/2.8.4-cn.1/gtnh-zh-cn-translation.zip",
+          "url": "https://example.org/releases/2.9.0-beta-2-multilang-abcdef123456/gtnh-multilingual-translation.zip",
           "sha256": "64 lowercase hexadecimal characters",
           "size": 123456,
           "required": true
@@ -24,39 +25,34 @@
 }
 ```
 
-客户端检测当前 GTNH 版本后只做精确匹配。没有对应键时不安装其他版本的翻译。
+客户端只精确匹配当前 GTNH 版本。资源刷新时只在当前语言出现在 `languages` 中时插入虚拟资源包。
 
 ## Translation ZIP
 
 ```text
 assets/{domain}/{path}
-install/config/GregTech_zh_CN.lang  # 可选、唯一允许写入实例的特殊文件
+install/config/GregTech_{locale}.lang
+install/config/Betterloadingscreen/tips/{locale}.txt
+install/config/amazingtrophies/lang/{locale}.lang
+install/config/InGameInfoXML/InGameInfo_{locale}.xml
 ```
 
-发布器在构建时把来源按以下顺序合并到 `assets` 命名空间：
+发布器读取官方 `GTNH-Translations/{locale}` 目录。对于每种语言，同一资源按 `txloader/load → txloader/forceload` 合并到标准 `assets` 命名空间；`.lang` 文件按顺序拼接，其他文件由高优先级层替换。
 
-1. `resources/[domain]/...`
-2. `config/txloader/load/{domain}/...`
-3. `config/txloader/forceload/{domain}/...`
+`install/` 不是通用解压入口。客户端只接受上面四种路径，并要求其中 locale 已在清单 `languages` 中。所有目标都被限制在游戏目录内并逐文件原子写入。
 
-同一路径的 `.lang` 文件按顺序拼接，因此后面的重复键覆盖前面的值，同时保留只存在于低优先级层的键。非语言文件由更高优先级层替换。
+## 虚拟资源包
 
-根目录的 `GregTech.lang` 会被发布为 `install/config/GregTech_zh_CN.lang`，客户端只允许把这个固定条目原子写入 `config/GregTech_zh_CN.lang`，不会通用解压 `install/` 目录。
+ZIP 经完整路径、重复条目、条目数量和实际解压总量验证后，以 `ZipFile` 从磁盘按需读取。它直接追加到 `Minecraft.refreshResources()` 的临时列表末尾，不加入资源包仓库，因此不会出现在资源包选择菜单。
 
-## 加载与语言门控
+ASM 排序值为 2000，高于 TX Loader 的 1001，确保合并后的官方翻译覆盖 TX Loader 原有资源。切换到英语等不受支持语言时，下一次资源刷新不会插入该包。
 
-ASM 变换的排序值为 2000，高于 TX Loader 的 1001。Hook 位于 `Minecraft.reloadResources(List)` 调用之前，所以 NHTranslationUpdate 的资源包最后加入列表，覆盖 TX Loader `forceload`。
-
-Hook 每次刷新资源时读取 `gameSettings.language`：只有 `zh_CN` 才插入资源包。客户端不修改 `options.txt`。专用服务端直接跳过更新流程。
+GregTech 等模组会在初始化阶段缓存部分本地化名称；语言专用配置文件虽然会提前安装，但游戏内切换语言后仍可能需要重启才能让这些模组完全刷新。
 
 ## 失败与回退
 
-- 新包必须依次通过下载大小、SHA-256、ZIP 路径、条目数量和解压总量检查，全部成功后才替换内存实例。
-- 状态文件记录最后一次成功包的 GTNH 版本、发布名、组件 ID 和哈希。
-- 启动时先加载与当前 GTNH 版本相同的最后可用包，再尝试联网更新。
-- 版本不同的缓存永远不会作为回退包加载。
-- 清单、下载或新 ZIP 失败不会清空已加载的最后可用包。
-
-## 信任边界
-
-SHA-256 防止下载损坏并把内容绑定到清单，但发布者身份仍依赖 HTTPS 地址及托管账号。发布流程应保护 GitHub 账号、限制 Actions 权限、启用分支保护，并固定第三方 Action 的提交 SHA。
+- 下载必须符合清单大小与 SHA-256。
+- 新 ZIP 全部验证且白名单文件写入成功后才替换当前实例。
+- 状态保存 GTNH 版本、发布名、组件 ID、哈希和语言列表。
+- 离线时只加载与当前 GTNH 版本一致的最后可用包。
+- 专用服务端跳过整个客户端更新流程。

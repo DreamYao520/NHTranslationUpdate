@@ -1,6 +1,7 @@
 package com.dreamyao.nhtranslationupdate.manifest;
 
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,11 +44,13 @@ public final class UpdateManifest {
     public static final class PackRelease {
 
         public String release;
+        public List<String> languages;
         public List<Artifact> artifacts;
 
         private void validate(String packVersion) {
             if (release == null || release.trim()
                 .isEmpty()) throw new IllegalArgumentException("Missing release for GTNH " + packVersion);
+            supportedLanguages();
             if (artifacts == null || artifacts.isEmpty()) {
                 throw new IllegalArgumentException("Missing artifacts for GTNH " + packVersion);
             }
@@ -66,6 +69,24 @@ public final class UpdateManifest {
                 if (artifact != null && "translation".equals(artifact.kind)) return artifact;
             }
             return null;
+        }
+
+        public Set<String> supportedLanguages() {
+            Set<String> result = new LinkedHashSet<>();
+            if (languages == null || languages.isEmpty()) {
+                // Schema-v3 packs published before multilingual support were zh_CN-only.
+                result.add("zh_CN");
+                return result;
+            }
+            for (String language : languages) {
+                if (language == null || !language.matches("[a-z]{2}_[A-Z]{2}")) {
+                    throw new IllegalArgumentException("Invalid language for release " + release + ": " + language);
+                }
+                if (!result.add(language)) {
+                    throw new IllegalArgumentException("Duplicate language for release " + release + ": " + language);
+                }
+            }
+            return result;
         }
     }
 

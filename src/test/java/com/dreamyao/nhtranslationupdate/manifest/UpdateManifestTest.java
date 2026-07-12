@@ -3,6 +3,7 @@ package com.dreamyao.nhtranslationupdate.manifest;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -18,6 +19,21 @@ class UpdateManifestTest {
         assertSame(manifest.packs.get("2.8.4"), manifest.select("2.8.4"));
         assertNull(manifest.select("2.8.3"));
         assertNull(manifest.select(null));
+    }
+
+    @Test
+    void supportsPublishedLanguagesAndDefaultsOldPacksToChinese() {
+        UpdateManifest manifest = validManifest();
+        assertTrue(
+            manifest.packs.get("2.8.4")
+                .supportedLanguages()
+                .contains("zh_CN"));
+        manifest.packs.get("2.8.4").languages = Arrays.asList("de_DE", "ja_JP");
+        manifest.validate();
+        assertTrue(
+            manifest.packs.get("2.8.4")
+                .supportedLanguages()
+                .contains("ja_JP"));
     }
 
     @Test

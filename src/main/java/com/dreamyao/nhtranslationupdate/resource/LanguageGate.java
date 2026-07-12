@@ -1,12 +1,17 @@
 package com.dreamyao.nhtranslationupdate.resource;
 
-public final class LanguageGate {
+import java.util.Set;
 
-    private static final String SIMPLIFIED_CHINESE = "zh_CN";
+public final class LanguageGate {
 
     private LanguageGate() {}
 
-    public static boolean shouldApply(String language) {
-        return language != null && SIMPLIFIED_CHINESE.equalsIgnoreCase(language.trim());
+    public static boolean shouldApply(String language, Set<String> supportedLanguages) {
+        if (language == null || supportedLanguages == null) return false;
+        String selected = language.trim();
+        for (String supported : supportedLanguages) {
+            if (selected.equalsIgnoreCase(supported)) return true;
+        }
+        return false;
     }
 }

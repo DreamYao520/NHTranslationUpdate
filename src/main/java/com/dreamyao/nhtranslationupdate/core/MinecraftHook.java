@@ -27,7 +27,7 @@ public final class MinecraftHook {
         NHTranslationResourcePack pack = NHTranslationResourcePack.INSTANCE;
         Minecraft minecraft = Minecraft.getMinecraft();
         String language = minecraft.gameSettings == null ? null : minecraft.gameSettings.language;
-        if (pack != null && LanguageGate.shouldApply(language)) {
+        if (pack != null && LanguageGate.shouldApply(language, pack.getSupportedLanguages())) {
             resourcePackList.add(pack);
         }
         return resourcePackList;
