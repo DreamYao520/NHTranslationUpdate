@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a unified GTNH translation ZIP and a schema-v3 version catalog."""
+"""Build a versioned multilingual pack from GTNewHorizons/GTNH-Translations."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 DOMAIN_PATTERN = re.compile(r"\[([^\[\]/]+)]$")
+LOCALE_PATTERN = re.compile(r"[a-z]{2}_[A-Z]{2}")
 SAFE_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+\-]{0,79}")
 MAX_MANIFEST_BYTES = 1024 * 1024
 
@@ -39,7 +40,7 @@ def add_entry(
     entries: dict[str, bytes],
     name: str,
     data: bytes,
-    source_label: str = "",
+    source_label: str,
     replace_non_lang: bool = False,
 ) -> None:
     normalized = str(PurePosixPath(name))
@@ -56,34 +57,82 @@ def add_entry(
     entries[normalized] = data
 
 
-def collect_resource_pack(source: Path) -> dict[str, bytes]:
-    """Collect resources/[domain]/... as assets/{domain}/...."""
+def discover_languages(source: Path) -> list[str]:
+    result = []
+    for candidate in sorted(source.iterdir()):
+        language = candidate.name
+        if (
+            candidate.is_dir()
+            and LOCALE_PATTERN.fullmatch(language)
+            and (candidate / "config" / "txloader").is_dir()
+            and (candidate / f"GregTech_{language}.lang").is_file()
+        ):
+            result.append(language)
+    if not result:
+        raise ValueError("GTNH-Translations source contains no publishable languages")
+    return result
+
+
+def txloader_domain(container_name: str) -> str:
+    match = DOMAIN_PATTERN.search(container_name)
+    return (match.group(1) if match else container_name).lower()
+
+
+def collect_txloader_layer(language_root: Path, layer: str) -> dict[str, bytes]:
     entries: dict[str, bytes] = {}
-    resources = source / "resources"
-    if resources.is_dir():
-        for container in sorted(path for path in resources.iterdir() if path.is_dir()):
-            match = DOMAIN_PATTERN.search(container.name)
-            if not match:
-                print(f"warning: skipped resource directory without [domain]: {container.name}", file=sys.stderr)
-                continue
-            domain = match.group(1).lower()
-            for file in sorted(path for path in container.rglob("*") if path.is_file()):
-                relative = file.relative_to(container).as_posix()
-                add_entry(entries, f"assets/{domain}/{relative}", file.read_bytes(), container.name)
+    base = language_root / "config" / "txloader" / layer
+    if not base.is_dir():
+        return entries
+    for container in sorted(path for path in base.iterdir() if path.is_dir()):
+        domain = txloader_domain(container.name)
+        for file in sorted(path for path in container.rglob("*") if path.is_file()):
+            relative = file.relative_to(container).as_posix()
+            add_entry(
+                entries,
+                f"assets/{domain}/{relative}",
+                file.read_bytes(),
+                f"{language_root.name}/config/txloader/{layer}/{container.name}",
+                replace_non_lang=True,
+            )
     return entries
 
 
-def collect_txloader_layer(source: Path, layer: str) -> dict[str, bytes]:
-    """Map one TX Loader layer into the standard resource-pack namespace."""
+def collect_install_files(language_root: Path, entries: dict[str, bytes]) -> None:
+    language = language_root.name
+    candidates = (
+        (language_root / f"GregTech_{language}.lang", f"config/GregTech_{language}.lang"),
+        (
+            language_root / "config" / "Betterloadingscreen" / "tips" / f"{language}.txt",
+            f"config/Betterloadingscreen/tips/{language}.txt",
+        ),
+        (
+            language_root / "config" / "amazingtrophies" / "lang" / f"{language}.lang",
+            f"config/amazingtrophies/lang/{language}.lang",
+        ),
+        (
+            language_root / "config" / "InGameInfoXML" / f"InGameInfo_{language}.xml",
+            f"config/InGameInfoXML/InGameInfo_{language}.xml",
+        ),
+    )
+    for source, target in candidates:
+        if source.is_file():
+            add_entry(entries, f"install/{target}", source.read_bytes(), f"{language}/{source.name}")
+
+
+def collect_translation_pack(source: Path, languages: list[str]) -> dict[str, bytes]:
     entries: dict[str, bytes] = {}
-    base = source / "config" / "txloader" / layer
-    if not base.is_dir():
-        return entries
-    for domain_dir in sorted(path for path in base.iterdir() if path.is_dir()):
-        domain = domain_dir.name.lower()
-        for file in sorted(path for path in domain_dir.rglob("*") if path.is_file()):
-            relative = file.relative_to(domain_dir).as_posix()
-            add_entry(entries, f"assets/{domain}/{relative}", file.read_bytes(), f"txloader/{layer}/{domain}")
+    for language in languages:
+        language_root = source / language
+        for layer in ("load", "forceload"):
+            for name, data in collect_txloader_layer(language_root, layer).items():
+                add_entry(
+                    entries,
+                    name,
+                    data,
+                    f"{language}/txloader/{layer}",
+                    replace_non_lang=True,
+                )
+        collect_install_files(language_root, entries)
     return entries
 
 
@@ -99,11 +148,11 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def artifact(path: Path, artifact_id: str, base_url: str, release: str) -> dict[str, object]:
+def artifact(path: Path, base_url: str, release: str) -> dict[str, object]:
     quoted_release = urllib.parse.quote(release, safe="-._~")
     quoted_name = urllib.parse.quote(path.name, safe="-._~")
     return {
-        "id": artifact_id,
+        "id": "gtnh-multilingual-translation",
         "kind": "translation",
         "url": f"{base_url.rstrip('/')}/releases/{quoted_release}/{quoted_name}",
         "sha256": sha256(path),
@@ -113,7 +162,7 @@ def artifact(path: Path, artifact_id: str, base_url: str, release: str) -> dict[
 
 
 def read_url(url: str, maximum: int) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "NHTranslationUpdate-publisher/1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "NHTranslationUpdate-publisher/2"})
     with urllib.request.urlopen(request, timeout=30) as response:
         data = response.read(maximum + 1)
     if len(data) > maximum:
@@ -176,6 +225,13 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         if not SAFE_LABEL.fullmatch(version):
             raise ValueError(f"invalid GTNH pack version: {version}")
 
+    available = discover_languages(source)
+    languages = args.language or available
+    unknown = sorted(set(languages) - set(available))
+    if unknown:
+        raise ValueError(f"languages not found in GTNH-Translations: {', '.join(unknown)}")
+    languages = [language for language in available if language in set(languages)]
+
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
@@ -185,23 +241,17 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     if manifest is None:
         manifest = {"schemaVersion": 3, "minecraftVersion": "1.7.10", "packs": {}}
 
-    entries = collect_resource_pack(source)
-    for layer in ("load", "forceload"):
-        for name, data in collect_txloader_layer(source, layer).items():
-            add_entry(entries, name, data, f"txloader/{layer}", replace_non_lang=True)
-
-    gregtech = source / "GregTech.lang"
-    if gregtech.is_file():
-        add_entry(entries, "install/config/GregTech_zh_CN.lang", gregtech.read_bytes(), "GregTech.lang")
-    if not entries:
-        raise ValueError("translation source produced no payloads")
+    entries = collect_translation_pack(source, languages)
+    if not any(name.startswith("assets/") for name in entries):
+        raise ValueError("GTNH-Translations source produced no resource entries")
 
     release_dir = output / "releases" / args.release
-    translation_archive = release_dir / "gtnh-zh-cn-translation.zip"
+    translation_archive = release_dir / "gtnh-multilingual-translation.zip"
     write_zip(translation_archive, entries)
     release_info = {
         "release": args.release,
-        "artifacts": [artifact(translation_archive, "gtnh-zh-cn-translation", args.base_url, args.release)],
+        "languages": languages,
+        "artifacts": [artifact(translation_archive, args.base_url, args.release)],
     }
     for version in args.pack_version:
         manifest["packs"][version] = release_info
@@ -212,13 +262,14 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     rows = []
     for version, info in sorted(manifest["packs"].items()):
         item = info["artifacts"][0]
+        language_text = ", ".join(info.get("languages", ["zh_CN"]))
         rows.append(
-            f'<li>GTNH {html.escape(version)}：<a href="{html.escape(str(item["url"]))}">'
-            f'{html.escape(str(info["release"]))}</a></li>'
+            f'<li>GTNH {html.escape(version)} ({html.escape(language_text)})：'
+            f'<a href="{html.escape(str(item["url"]))}">{html.escape(str(info["release"]))}</a></li>'
         )
     (output / "index.html").write_text(
         "<!doctype html><meta charset=utf-8><title>NHTranslationUpdate</title>"
-        f"<h1>GTNH 简体中文汉化更新</h1><ul>{''.join(rows)}</ul>",
+        f"<h1>GTNH Translation Updates</h1><ul>{''.join(rows)}</ul>",
         encoding="utf-8",
     )
     return manifest
@@ -230,6 +281,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--release", required=True)
     parser.add_argument("--pack-version", action="append", required=True)
+    parser.add_argument("--language", action="append")
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--existing-site-url")
     return parser.parse_args(argv)

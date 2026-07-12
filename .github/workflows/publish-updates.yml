@@ -4,21 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: Translation release name, for example 2.8.4-cn.2
+        description: Translation release name, for example 2.9.0-beta-2-multilang-build1
         required: false
       pack_version:
-        description: Compatible GTNH version, for example 2.8.4
+        description: Compatible GTNH version, for example 2.9.0-beta-2
         required: false
       source_repository:
         description: Translation source repository
         required: true
-        default: DreamYao520/Translation-of-GTNH
+        default: GTNewHorizons/GTNH-Translations
       source_ref:
         description: Translation source branch, tag, or commit
         required: true
         default: master
   schedule:
-    # 每天在 Translation-of-GTNH 的夜间构建之后刷新。
+    # 每天在官方 GTNH-Translations 同步完成后刷新。
     - cron: '30 19 * * *'
 
 permissions:
@@ -42,9 +42,15 @@ jobs:
       - name: Checkout translation source
         uses: actions/checkout@v5
         with:
-          repository: ${{ inputs.source_repository || 'DreamYao520/Translation-of-GTNH' }}
+          repository: ${{ inputs.source_repository || 'GTNewHorizons/GTNH-Translations' }}
           ref: ${{ inputs.source_ref || 'master' }}
           path: translation-source
+      - name: Checkout GTNH version marker
+        uses: actions/checkout@v5
+        with:
+          repository: GTNewHorizons/GT-New-Horizons-Modpack
+          ref: master
+          path: gtnh-modpack
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -59,19 +65,19 @@ jobs:
           SOURCE_SHA=$(git -C translation-source rev-parse --short=12 HEAD)
           PACK_VERSION='${{ inputs.pack_version }}'
           if [[ -z "$PACK_VERSION" ]]; then
-            PACK_VERSION=$(tr -d '[:space:]' < update/current-pack-version.txt)
+            PACK_VERSION=$(sed -nE 's/^GTNH ([^ ]+) .*/\1/p' gtnh-modpack/config/txloader/load/mainmenu/version.txt | head -n 1)
           fi
           if [[ -z "$PACK_VERSION" ]]; then
-            echo 'Could not determine GTNH version; set update/current-pack-version.txt or use pack_version.' >&2
+            echo 'Could not determine GTNH version from the official modpack; use pack_version.' >&2
             exit 1
           fi
           RELEASE='${{ inputs.release }}'
           if [[ -z "$RELEASE" ]]; then
-            RELEASE="${PACK_VERSION}-nightly-${SOURCE_SHA}"
+            RELEASE="${PACK_VERSION}-multilang-${SOURCE_SHA}"
           fi
           echo "pack_version=$PACK_VERSION" >> "$GITHUB_OUTPUT"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
-      - name: Build signed-by-hash update payloads
+      - name: Build hash-verified update payloads
         run: >-
           python tools/build_update.py
           --source translation-source

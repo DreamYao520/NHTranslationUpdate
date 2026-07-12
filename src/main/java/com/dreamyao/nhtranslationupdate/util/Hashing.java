@@ -14,12 +14,7 @@ public final class Hashing {
     private Hashing() {}
 
     public static String sha256(Path file) throws IOException {
-        MessageDigest digest;
-        try {
-            digest = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 is unavailable", impossible);
-        }
+        MessageDigest digest = sha256Digest();
         byte[] buffer = new byte[64 * 1024];
         try (InputStream input = Files.newInputStream(file)) {
             int read;
@@ -27,7 +22,24 @@ public final class Hashing {
                 if (read > 0) digest.update(buffer, 0, read);
             }
         }
-        byte[] bytes = digest.digest();
+        return hex(digest.digest());
+    }
+
+    public static String sha256(byte[] content) {
+        MessageDigest digest = sha256Digest();
+        digest.update(content);
+        return hex(digest.digest());
+    }
+
+    private static MessageDigest sha256Digest() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
+    }
+
+    private static String hex(byte[] bytes) {
         char[] result = new char[bytes.length * 2];
         for (int i = 0; i < bytes.length; i++) {
             int value = bytes[i] & 0xff;

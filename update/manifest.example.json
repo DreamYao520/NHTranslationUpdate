@@ -2,13 +2,25 @@
   "schemaVersion": 3,
   "minecraftVersion": "1.7.10",
   "packs": {
-    "2.8.4": {
-      "release": "2.8.4-cn.1",
+    "2.9.0-beta-2": {
+      "release": "2.9.0-beta-2-multilang-example",
+      "languages": [
+        "de_DE",
+        "es_ES",
+        "fr_FR",
+        "ja_JP",
+        "ko_KR",
+        "pl_PL",
+        "pt_BR",
+        "ru_RU",
+        "tr_TR",
+        "zh_CN"
+      ],
       "artifacts": [
         {
-          "id": "gtnh-zh-cn-translation",
+          "id": "gtnh-multilingual-translation",
           "kind": "translation",
-          "url": "https://example.invalid/releases/2.8.4-cn.1/gtnh-zh-cn-translation.zip",
+          "url": "https://example.invalid/releases/2.9.0-beta-2-multilang-example/gtnh-multilingual-translation.zip",
           "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
           "size": 1,
           "required": true

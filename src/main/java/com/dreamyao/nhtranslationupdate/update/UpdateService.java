@@ -35,6 +35,9 @@ public final class UpdateService {
         UpdateConfig config = UpdateConfig.load(gameDirectory);
         if (!config.enabled) return "自动更新已禁用";
         if (!client) return "服务端无需加载客户端汉化资源";
+        if (LegacyResourcePackCleanup.run(gameDirectory)) {
+            NHTranslationUpdate.LOG.info("Removed the legacy on-disk NHTranslationUpdate resource pack");
+        }
 
         Result detected = PackVersionDetector.detect(gameDirectory, config.packVersion);
         if (detected == null) {
@@ -61,6 +64,7 @@ public final class UpdateService {
         }
         Artifact artifact = release.translationArtifact();
         if (artifact == null) return "GTNH " + packVersion + " 的发布记录没有翻译包";
+        java.util.Set<String> languages = release.supportedLanguages();
 
         if (loaded != null && artifact.sha256.equalsIgnoreCase(loaded.sha256)) {
             return "GTNH " + packVersion + " 汉化已是最新版本 " + release.release;
@@ -69,8 +73,8 @@ public final class UpdateService {
         try {
             Path archive = ensureArtifact(config, new HttpClient(config), artifact);
             NHTranslationResourcePack
-                .load(archive, config.gameDirectory, config.maxZipEntries, config.maxExtractedBytes);
-            state.setLastKnownGood(packVersion, release.release, artifact);
+                .load(archive, config.gameDirectory, languages, config.maxZipEntries, config.maxExtractedBytes);
+            state.setLastKnownGood(packVersion, release.release, artifact, languages);
             state.save();
             return "已准备 GTNH " + packVersion + " 汉化 " + release.release;
         } catch (Exception exception) {
@@ -92,7 +96,7 @@ public final class UpdateService {
                 return null;
             }
             NHTranslationResourcePack
-                .load(archive, config.gameDirectory, config.maxZipEntries, config.maxExtractedBytes);
+                .load(archive, config.gameDirectory, saved.languages, config.maxZipEntries, config.maxExtractedBytes);
             NHTranslationUpdate.LOG
                 .info("Loaded last-known-good translation {} for GTNH {}", saved.release, packVersion);
             return saved;
